@@ -1,0 +1,7 @@
+show full room and building in worker view of requests
+assign workers does not work
+need to move room statuses, job types, and room types into database
+add requests to user view
+
+finally,
+move requests into SQL after gui works 
