@@ -14,7 +14,7 @@ pip install sqlalchemy mysql-connector-python
 
 Log into your MySQL Client
 
-![](assets\maria.png)
+![](assets/maria.png)
 
 Run the followin SQL command
 
@@ -22,4 +22,4 @@ Run the followin SQL command
 CREATE DATABASE CS440;
 ```
 
-![](assets\create.png)
+![](assets/create.png)
