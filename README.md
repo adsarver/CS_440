@@ -23,3 +23,9 @@ CREATE DATABASE CS440;
 ```
 
 ![](assets/create.png)
+
+## Run the GUI
+
+```
+python gui.py
+```
