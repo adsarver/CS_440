@@ -20,5 +20,6 @@ BUILDINGS = {
                "Health Sciences South"],
     }    
     
-WORK_TYPES = ["Janitorial", "Electrical", "HVAC", "Welding","Drywall"]
+JOB_TYPES = ["Janitor", "Electrician", "HVAC", "Welder","Drywaller"]
 ROOM_TYPES = ["Bathroom", "Lecture Hall", "Office", "Laboratory", "Utilities"]
+STATUS_TYPES = ["Incomplete", "Complete"]

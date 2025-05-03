@@ -2,7 +2,7 @@ from generate import *
 from delete import truncate_and_reset_all_data
 from config import CONNECTION_URL, ROOM_TYPES
 
-from dbtypes import Campus, Building, Room, Worker, Request, Base
+from dbtypes import Campus, Building, Room, Worker, Request, RequestStatus, Base
 
 import sqlalchemy, datetime
 from sqlalchemy.orm import sessionmaker
@@ -18,7 +18,7 @@ class Maintenance(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Maintenance Management System")
-        self.geometry("1000x700")
+        self.geometry("1200x700")
         self.session = Session()
 
         self.notebook = ttk.Notebook(self)
@@ -32,18 +32,42 @@ class Maintenance(tk.Tk):
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="User View")
 
-        # Login
-        ttk.Label(frame, text="User Email:").pack(pady=(10, 0))
+        # Account Creation Section
+        self.create_frame = ttk.LabelFrame(frame, text="Create Account")
+        self.create_frame.pack(pady=10, fill='x', padx=10)
+
+        ttk.Label(self.create_frame, text="Email:").grid(row=0, column=0, sticky='e')
         self.user_email_var = tk.StringVar()
-        ttk.Entry(frame, textvariable=self.user_email_var).pack()
+        ttk.Entry(self.create_frame, textvariable=self.user_email_var).grid(row=0, column=1)
 
-        ttk.Button(frame, text="Log In", command=self.login_user).pack(pady=5)
-        ttk.Button(frame, text="Create Account", command=self.create_user).pack()
+        ttk.Label(self.create_frame, text="First Name:").grid(row=1, column=0, sticky='e')
+        self.first_name_var = tk.StringVar()
+        ttk.Entry(self.create_frame, textvariable=self.first_name_var).grid(row=1, column=1)
 
+        ttk.Label(self.create_frame, text="Last Name:").grid(row=2, column=0, sticky='e')
+        self.last_name_var = tk.StringVar()
+        ttk.Entry(self.create_frame, textvariable=self.last_name_var).grid(row=2, column=1)
+
+        ttk.Button(self.create_frame, text="Create Account", command=self.create_user).grid(row=3, column=0, columnspan=2, pady=5)
+
+        # Login Section
+        login_frame = ttk.LabelFrame(frame, text="Log In")
+        login_frame.pack(pady=10, fill='x', padx=10)
+
+        ttk.Label(login_frame, text="Email:").grid(row=0, column=0, sticky='e')
+        self.login_email_var = tk.StringVar()
+        ttk.Entry(login_frame, textvariable=self.login_email_var).grid(row=0, column=1)
+
+        ttk.Button(login_frame, text="Log In", command=self.login_user).grid(row=1, column=0, columnspan=2, pady=5)
+        self.logout_button = ttk.Button(login_frame, text="Log Out", command=self.logout_user)
+        self.logout_button.grid(row=3, column=0, columnspan=2, pady=10)
+        self.logout_button.grid_remove()  # Hide initially
+        
         # After Login
         self.user_action_frame = ttk.LabelFrame(frame, text="Submit Request")
         self.user_action_frame.pack(pady=20, fill='x', padx=10)
         self.user_action_frame.pack_forget()  # Hide initially
+        
 
         # Room
         ttk.Label(self.user_action_frame, text="Select Room:").grid(row=0, column=0, sticky='e')
@@ -58,6 +82,16 @@ class Maintenance(tk.Tk):
 
         ttk.Button(self.user_action_frame, text="Submit Request", command=self.submit_request).grid(row=2, column=0, columnspan=2, pady=10)
 
+        # User Requests View
+        self.user_requests_frame = ttk.LabelFrame(frame, text="Your Requests")
+        self.user_requests_frame.pack(pady=20, fill='x', padx=10)
+        self.user_requests_frame.pack_forget()  # Hide initially
+        
+        self.user_request_tree = ttk.Treeview(self.user_requests_frame, columns=('ID', 'Room', 'Description', 'Status', 'Req Time', 'Complete Time'), show='headings')
+        for col in self.user_request_tree["columns"]:
+            self.user_request_tree.heading(col, text=col)
+        self.user_request_tree.pack(fill='x')
+        
     def worker_view_tab(self):
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="Worker View")
@@ -73,7 +107,7 @@ class Maintenance(tk.Tk):
 
         # Requests
         ttk.Label(frame, text="Requests").pack()
-        self.request_tree = ttk.Treeview(frame, columns=('ID', 'User', 'Room', 'Worker', 'Status', 'Req Time', 'Complete Time'), show='headings')
+        self.request_tree = ttk.Treeview(frame, columns=('ID', 'User', 'Room', 'Description', 'Assignee','Status', 'Req Time', 'Complete Time'), show='headings')
         for col in self.request_tree["columns"]:
             self.request_tree.heading(col, text=col)
         self.request_tree.pack(fill='x')
@@ -84,16 +118,11 @@ class Maintenance(tk.Tk):
         assign_frame = ttk.Frame(frame)
         assign_frame.pack(pady=5)
 
-        self.worker_email_var = tk.StringVar()
-        self.worker_dropdown = ttk.Combobox(assign_frame, textvariable=self.worker_email_var)
-        self.worker_dropdown.pack(side='left', padx=2)
-        self.refresh_worker_dropdown()
-
         ttk.Button(assign_frame, text="Assign", command=self.assign_worker).pack(side='left', padx=2)
 
         # Completion Time
-        ttk.Button(frame, text="Set Completion Time for Selected Requests", command=self.set_completion_time).pack(pady=10)
-
+        ttk.Button(frame, text="Set Selected Request To Complete", command=self.set_completion_time).pack(pady=10)
+    
     def add_location_tab(self):
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="Add Locations")
@@ -152,28 +181,47 @@ class Maintenance(tk.Tk):
 
     def create_user(self):
         email = self.user_email_var.get().strip()
-        if email:
-            if not self.session.query(User).filter_by(email=email).first() and not self.session.query(Worker).filter_by(email=email).first():
-                new_user = User(email=email)
-                self.session.add(new_user)
-                self.session.commit()
-                messagebox.showinfo("Account Created", f"Account for {email} created.")
-            else:
-                messagebox.showwarning("Exists", "User already exists.")
-        else:
-            messagebox.showerror("Error", "Email cannot be empty.")
+        first_name = self.first_name_var.get().strip()
+        last_name = self.last_name_var.get().strip()
 
+        if not email or not first_name or not last_name:
+            messagebox.showerror("Error", "Email, First Name, and Last Name are required.")
+            return
+
+        if self.session.query(User).filter_by(email=email).first() or self.session.query(Worker).filter_by(email=email).first():
+            messagebox.showerror("Error", "User with this email already exists.")
+            return
+
+        new_user = User(email=email, firstname=first_name, lastname=last_name)
+        self.session.add(new_user)
+        self.session.commit()
+
+    def refresh_user_requests_table(self):
+        self.user_request_tree.delete(*self.user_request_tree.get_children())  # Clear existing rows
+        email = getattr(self, "current_user_email", None)
+        if email:
+            user_requests = self.session.query(Request).filter_by(user_email=email).all()
+            for r in user_requests:
+                status_str = self.session.query(RequestStatus).filter_by(id=r.status_id).first().name
+                self.user_request_tree.insert('', 'end', values=(r.id, f"{r.room.building.campus.name} - {r.room.building.name} - {r.room.name}", r.description, status_str, r.reqtime, r.comptime))
 
     def login_user(self):
-        email = self.user_email_var.get().strip()
-        if email:
-            self.current_user_email = email 
-            print(f"Logged in as: {self.current_user_email}")
+        email = self.login_email_var.get().strip()
+        if self.session.query(User).filter_by(email=email).first() is not None:
+            self.current_user_email = email
             self.user_action_frame.pack()
-            messagebox.showinfo("Login", f"Logged in as {email}")
+            self.user_requests_frame.pack()
+            self.refresh_user_requests_table()
+            self.refresh_request_table()
+            self.logout_button.grid()
         else:
-            messagebox.showerror("Error", "Email cannot be empty.")
+            messagebox.showerror("Error", "Email not associated with a user.")
 
+    def logout_user(self):
+        self.current_user_email = None
+        self.user_action_frame.pack_forget()
+        self.logout_button.grid_remove()
+        self.user_requests_frame.pack_forget()
 
     def refresh_room_dropdown(self):
         self.room_dropdown['values'] = [
@@ -213,42 +261,49 @@ class Maintenance(tk.Tk):
                 room_id=room.id,
                 description=description,
                 worker_email=None,
-                status="Incomplete",
+                status_id=1,
                 reqtime=datetime.datetime.now(),
                 comptime=None
             )
             self.session.add(new_req)
             self.session.commit()
             self.refresh_request_table()
+            self.refresh_user_requests_table()
+
         else:
             messagebox.showerror("Error", "Room not found.")
 
     def refresh_worker_table(self):
         self.worker_tree.delete(*self.worker_tree.get_children())
         for w in self.session.query(Worker).all():
-            self.worker_tree.insert('', 'end', values=(w.email, w.firstname, w.lastname, w.specialization))
+            job_type = self.session.query(JobType).filter_by(id=w.job_type_id).first().name
+            # print(job_type)
+            self.worker_tree.insert('', 'end', values=(w.email, w.firstname, w.lastname, job_type))
 
     def refresh_request_table(self):
         self.request_tree.delete(*self.request_tree.get_children())
         for r in self.session.query(Request).all():
-            self.request_tree.insert('', 'end', values=(r.id, r.user_email, r.room_id, r.worker_email, r.status, r.reqtime, r.comptime))
-
-    def refresh_worker_dropdown(self):
-        self.worker_dropdown['values'] = [w.email for w in self.session.query(Worker).all()]
+            status_str = self.session.query(RequestStatus).filter_by(id=r.status_id).first().name
+            self.request_tree.insert('', 'end', values=(r.id, r.user_email, f"{r.room.building.campus.name} - {r.room.building.name} - {r.room.name}", r.description, r.worker_email, status_str, r.reqtime, r.comptime))
 
     def assign_worker(self):
-        try:
-            req_id = int(self.req_id_var.get())
-            worker_email = self.worker_email_var.get()
-            req = self.session.query(Request).filter_by(id=req_id).first()
-            if req:
-                req.worker_email = worker_email
-                self.session.commit()
-                self.refresh_request_table()
-            else:
-                messagebox.showerror("Error", "Request not found.")
-        except Exception as e:
-            messagebox.showerror("Error", str(e))
+        selected_request = self.request_tree.selection()
+        selected_worker = self.worker_tree.selection()
+
+        if not selected_request or not selected_worker:
+            messagebox.showerror("Error", "Please select both a request and a worker.")
+            return
+
+        req_id = self.request_tree.item(selected_request[0])['values'][0]
+        worker_email = self.worker_tree.item(selected_worker[0])['values'][0]
+
+        req = self.session.query(Request).filter_by(id=req_id).first()
+        if req:
+            req.worker_email = worker_email
+            self.session.commit()
+            self.refresh_request_table()
+        else:
+            messagebox.showerror("Error", "Request not found.")
 
     def set_completion_time(self):
         selected = self.request_tree.selection()
@@ -257,9 +312,11 @@ class Maintenance(tk.Tk):
             req = self.session.query(Request).filter_by(id=req_id).first()
             if req:
                 req.comptime = datetime.datetime.now()
-                req.status = "Complete"
+                req.status_id = self.session.query(RequestStatus).filter_by(name='Complete').first().id
+
         self.session.commit()
         self.refresh_request_table()
+        self.refresh_user_requests_table()
 
     def refresh_campus_dropdown(self):
         self.campus_dropdown['values'] = [c.name for c in self.session.query(Campus).all()]
@@ -281,7 +338,7 @@ class Maintenance(tk.Tk):
                 self.campus_name_var.set("")
                 self.campus_address_var.set("")
             else:
-                messagebox.showwarning("Warning", "Campus already exists.")
+                messagebox.showwarning("Error", "Campus already exists.")
 
     def add_building(self):
         name = self.building_name_var.get().strip()
@@ -297,7 +354,7 @@ class Maintenance(tk.Tk):
                 self.building_address_var.set("")
                 self.building_campus_var.set("")
             else:
-                messagebox.showwarning("Warning", "Building already exists.")
+                messagebox.showwarning("Error", "Building already exists.")
 
     def add_room(self):
         name = self.room_name_var.get().strip()
@@ -312,20 +369,21 @@ class Maintenance(tk.Tk):
             Campus.name == campus_name
         ).first()
         if name and rtype and building:
+            room_type_id = self.session.query(RoomType).filter_by(name=rtype).first().id
             if not self.session.query(Room).filter_by(name=name, building_id=building.id).first():
-                self.session.add(Room(name=name, type=rtype, building_id=building.id))
+                self.session.add(Room(name=name, type_id=room_type_id, building_id=building.id))
                 self.session.commit()
                 self.refresh_room_dropdown()
                 self.room_name_var.set("")
                 self.room_type_var.set("")
                 self.room_building_var.set("")
             else:
-                messagebox.showwarning("Warning", "Room already exists.")
+                messagebox.showwarning("Error", "Room already exists.")
                 
 class Delete(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Repopulate Data")
+        self.title("Clean/Repopulate Data")
         self.geometry("300x150")
         self.session = Session()
 
@@ -337,17 +395,20 @@ class Delete(tk.Tk):
 
     def generate(self):
         if messagebox.askyesno("Confirm Generation", "Are you sure you want to generate data?"):
-            generate_buildings_and_rooms(self.session)
+            generate_data(self.session)
 
     def delete_all(self):
         if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete everything?"):
             truncate_and_reset_all_data(self.session)
-            
-if __name__ == "__main__":
-    maintenance = Maintenance()
-    maintenance.mainloop()
-    maintenance.session.close()
 
+def main():
     delete = Delete()
     delete.mainloop()
     delete.session.close()
+    
+    maintenance = Maintenance()
+    maintenance.mainloop()
+    maintenance.session.close() 
+    
+if __name__ == "__main__":
+    main()

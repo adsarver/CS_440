@@ -65,7 +65,8 @@ class Room(Mixin, Base):
     id = Column(Integer, primary_key=True)
     building_id = Column(Integer, ForeignKey('building.id'))
     name = Column(Text, nullable=True)
-    type = Column(Text, nullable=True)
+    type_id = Column(Integer, ForeignKey('room_types.id'), nullable=True)  # Make sure this matches your table name!
+    room_type = relationship("RoomType", back_populates="rooms")  # <-- This is what's missing!
     requests = relationship("Request", backref="room")
     __table_args__ = tuple(UniqueConstraint("building_id", "name"))
     
@@ -81,17 +82,38 @@ class Worker(Mixin, Base):
     email = Column(String(255), primary_key=True)
     firstname = Column(Text, nullable=True)
     lastname = Column(Text, nullable=True)
-    specialization = Column(Text)
+    job_type_id = Column(Integer, ForeignKey("job_types.id"))  # Add this line
+    job_type = relationship("JobType", back_populates="workers")  # Add this line
     campus_id = Column(Integer, ForeignKey('campus.id'), nullable=True)
-    assignments = relationship("Request", backref="worker")
+    assignments = relationship("Request",backref="worker",foreign_keys="[Request.worker_email]")
+
 
 class Request(Mixin, Base):
     __tablename__ = "request"
     id = Column(Integer, primary_key=True)
-    status = Column(Text)
+    status_id = Column(Integer, ForeignKey("request_status.id"))
+    request_status = relationship("RequestStatus", back_populates="requests")
     user_email = Column(String(255), ForeignKey('user.email'))
     reqtime = Column(DateTime)
     worker_email = Column(String(255), ForeignKey("worker.email"), nullable=True)
-    description = Column(String, nullable=True)
+    description = Column(String(255), nullable=True)
     comptime = Column(DateTime, nullable=True)
     room_id = Column(Integer, ForeignKey("room.id"))
+
+class RoomType(Mixin, Base):
+    __tablename__ = "room_types"
+    id = Column(Integer, primary_key=True)
+    name = Column(Text, unique=True)
+    rooms = relationship('Room', back_populates='room_type') 
+
+class JobType(Mixin, Base):
+    __tablename__ = "job_types"
+    id = Column(Integer, primary_key=True)
+    name = Column(Text, unique=True)
+    workers = relationship("Worker", back_populates="job_type")
+
+class RequestStatus(Mixin, Base):
+    __tablename__ = "request_status"
+    id = Column(Integer, primary_key=True)
+    name = Column(Text, unique=True)
+    requests = relationship("Request", back_populates="request_status")

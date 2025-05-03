@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
-from dbtypes import Building, Room, Campus, Worker, User, Request
+from dbtypes import Building, Room, Campus, Worker, User, Request, RoomType, JobType, RequestStatus, Base
 from sqlalchemy.orm import sessionmaker
 import sqlalchemy, faker, random, datetime
-from config import CONNECTION_URL, WORK_TYPES, ROOM_TYPES, BUILDINGS
+from config import CONNECTION_URL, JOB_TYPES, ROOM_TYPES, BUILDINGS, STATUS_TYPES
 
 def generate_random_address():
     fake = faker.Faker()
@@ -27,11 +27,18 @@ def add_building(name, campus_name, session: Session):
     session.commit()
     return building
 
-def add_room(building, room_name, type, session: Session):
-    room = Room(name=room_name, building_id=building.id, type=type)
+def add_room(building, room_name, room_type_name, session: Session):
+    room_type = session.query(RoomType).filter_by(name=room_type_name).first()
+    if not room_type:
+        room_type = RoomType(name=room_type_name)
+        session.add(room_type)
+        session.commit()
+    
+    room = Room(name=room_name, building_id=building.id, type_id=room_type.id)
     session.add(room)
     session.commit()
     return room
+
 
 def add_worker(campus_name, session: Session):
     fake = faker.Faker()
@@ -40,11 +47,11 @@ def add_worker(campus_name, session: Session):
     lastname = fake.last_name()
     email = fake.email()
     
-    worker = Worker(email=email,
-                    firstname=firstname,
-                    lastname=lastname,
-                    specialization=random.choice(WORK_TYPES),
-                    campus_id=campus.id)
+    worker = Worker(email= email,
+                    firstname= firstname,
+                    lastname= lastname,
+                    job_type_id= random.choice(session.query(JobType).all()).id,
+                    campus_id= campus.id)
 
     session.add(worker)
     session.commit()
@@ -92,7 +99,14 @@ def add_request(session: Session, user_email, room_id, description, worker_email
     print(f"Request by user '{user.email}' added for room ID '{room.id}'")
     return request
 
-def generate_buildings_and_rooms(session: Session, building_floors=2, rooms_per_floor=5, workers_per_campus=5):
+def generate_data(session: Session, building_floors=2, rooms_per_floor=5, workers_per_campus=5):
+    
+    [session.add(JobType(name=type)) for type in JOB_TYPES]
+    [session.add(RoomType(name=room)) for room in ROOM_TYPES]
+    [session.add(RequestStatus(name=status)) for status in STATUS_TYPES]
+    session.commit()
+    
+    
     room_numbers = [x * 100 + y for x in range(1, building_floors+1) for y in range(1, rooms_per_floor+1)]
 
     for campus_name in BUILDINGS.keys():
@@ -109,12 +123,18 @@ def generate_buildings_and_rooms(session: Session, building_floors=2, rooms_per_
             add_worker(campus_name, session)
             
 
+
+            
+
 def main():
     engine = sqlalchemy.create_engine(CONNECTION_URL, echo=True)
     Session = sessionmaker(bind=engine)
     session = Session()
-
-    generate_buildings_and_rooms(session)
+    
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
+    
+    generate_data(session)
     session.close()
 
 if __name__ == "__main__":
