@@ -63,7 +63,7 @@ def add_worker(campus_name):
 
     return sql.create_entry(worker)
 
-def add_user(session: Session, firstname=None, lastname=None, email=None):
+def add_user(firstname=None, lastname=None, email=None):
     fake = faker.Faker()
     firstname = firstname or fake.first_name()
     lastname = lastname or fake.last_name()
@@ -78,7 +78,7 @@ def add_user(session: Session, firstname=None, lastname=None, email=None):
         print(f"User with email '{email}' already exists.")
     return user
 
-def add_request(session: Session, user_email, room_id, description, worker_email=None):
+def add_request(user_email, room_id, description, worker_email=None):
     user = sql.query_where(User, f"email=\'{user_email}\'")[0]
     room = sql.query_where(Room, f"id=\'{room_id}\'")[0]
     worker = sql.query_where(Worker, f"email=\'{worker_email}\'")[0] if worker_email else None
@@ -104,7 +104,7 @@ def add_request(session: Session, user_email, room_id, description, worker_email
     print(f"Request by user '{user.email}' added for room ID '{room.id}'")
     return sql.create_entry(request)
 
-def generate_data(session: Session, building_floors=2, rooms_per_floor=5, workers_per_campus=5):
+def generate_data(building_floors=2, rooms_per_floor=5, workers_per_campus=5):
     
     [sql.create_entry(JobType(name=type)) for type in JOB_TYPES]
     [sql.create_entry(RoomType(name=room)) for room in ROOM_TYPES]
@@ -128,16 +128,7 @@ def generate_data(session: Session, building_floors=2, rooms_per_floor=5, worker
             
 
 def main():
-    engine = sqlalchemy.create_engine(CONNECTION_URL, echo=True)
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    
-    sql = custom_sql(session, engine)
-    
-    Base.metadata.drop_all(engine)
-    Base.metadata.create_all(engine)
-    
-    generate_data(session)
+    generate_data()
     session.close()
 
 if __name__ == "__main__":

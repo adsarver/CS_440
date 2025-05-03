@@ -402,7 +402,7 @@ def main():
     # delete = Delete()
     # delete.mainloop()
     # delete.session.close()
-    generate_data(session)
+    generate_data()
     
     maintenance = Maintenance()
     maintenance.mainloop()
