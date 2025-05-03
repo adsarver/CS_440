@@ -14,28 +14,39 @@ class custom_sql():
     # Accepts class type and string input
     def query_all(self, cls: Union[dbtypes.Mixin, str]):
         attrs = dict()
-        keys = ""
-        colkeys = ""
+        
+        if type(cls) is str:
+            cls = cls.lower()
+            if "_" in cls:
+                cls = cls.replace('_', '')
+            for name, obj in inspect.getmembers(dbtypes):
+                if name.lower() == cls:
+                    cls = obj()
+                    break
         
         for k in cls.__mapper__.columns.keys():
             attrs[k] = getattr(cls, k)
-            keys = keys + k + ", "
-            colkeys = colkeys + ":" + k + ", "
             
+        objslist = attrs.copy()
+
         with self.engine.connect() as con:
             statement = text(""f"SELECT * FROM {cls.__tablename__ if type(cls) is not str else cls}""")
             rs = con.execute(statement)
-            
-            if rs is None:
-                return []
 
             found = list()
             for tup in rs:
-                temp = cls()
+                if isinstance(cls, dbtypes.Mixin):
+                    temp = cls
+                else:
+                    temp = cls()
                 
                 for i in range(len(list(attrs.keys()))):
                     key = list(attrs.keys())[i]
                     setattr(temp, key, tup[i])
+                    
+                    if "_id" in key and tup[i] is not None:
+                        setattr(temp, key[:-3], self.query_where(key[:-3], f"id={tup[i] if type(tup[i]) == int else tup[i].id}")[0])
+
                 
                 found.append(temp)
                 
@@ -46,31 +57,37 @@ class custom_sql():
         attrs = dict()
         
         if type(cls) is str:
-            cls = cls.capitalize()
+            cls = cls.lower()
+            if "_" in cls:
+                cls = cls.replace('_', '')
             for name, obj in inspect.getmembers(dbtypes):
-                if name == cls:
+                if name.lower() == cls:
                     cls = obj
                     break
-                
+        
         for k in cls.__mapper__.columns.keys():
             attrs[k] = getattr(cls, k)
-            
+                            
         with self.engine.connect() as con:            
             statement = text(""f"SELECT * FROM {cls.__tablename__ if type(cls) is not str else cls} WHERE {where}""")
             rs = con.execute(statement)  
-            
-            if rs is None:
-                return []
-            
 
             found = list()
             for tup in rs:
-                temp = cls
+                if isinstance(cls, dbtypes.Mixin):
+                    temp = cls
+                else:
+                    temp = cls()
+                    
                 for i in range(len(list(attrs.keys()))):
                     key = list(attrs.keys())[i]
                     setattr(temp, key, tup[i])
+                    
+                    if "_id" in key and tup[i] is not None:
+                        setattr(temp, key[:-3], self.query_where(key[:-3], f"id={tup[i] if type(tup[i]) == int else tup[i].id}")[0])
                 
                 found.append(temp)
+                
             return found
         
     def create_entry(self, data: dbtypes.Mixin):
@@ -84,17 +101,13 @@ class custom_sql():
             keys = keys + k + ", "
             colkeys = colkeys + ":" + k + ", "
         
-        temp = attrs.copy()
+        objslist = attrs.copy()
         
-        for k, val in temp.items():
+        for k, val in attrs.items():
             if "_id" in k and attrs[k] is not None:
-                crit = lambda member: member[0] == k[:-3].capitalize()
-                tableobj = next((member for member in inspect.getmembers(dbtypes) if crit(member)), None)
-                if tableobj is None: break
-                attrs[k[:-3]] = self.query_where(tableobj[1](), f"id={val}")
-            elif "_id" in k:
-                attrs[k] = getattr(data, k[:-3]).id
-        
+                objslist[k[:-3]] = self.query_where(k[:-3], f"id={val}")[0]
+            elif "_id" in k and attrs[k] is None:
+                objslist[k] = getattr(data, k[:-3]).id
         
         for k, val in attrs.items():
             if val is not None:
@@ -105,14 +118,16 @@ class custom_sql():
                     query = query + f"{k}=\'{val}\' AND "
                 elif not isinstance(val, dbtypes.Mixin) and not isinstance(val, list):
                     query = query + f"{k}={val} AND "
-        
+
         with self.engine.connect() as con:
             statement = text(f"INSERT INTO {data.__tablename__}({keys[:-2]}) VALUES({colkeys[:-2]})")
             con.execute(statement, attrs)
             con.commit()
             
-            rs = self.query_where(data, query[:-5])
-            return rs[0] if type(rs) == list and len(rs) >= 1 else rs
+            rs = self.query_where(data, query[:-5])[0]
+            for key, val in objslist.items():
+                setattr(rs, key, val)
+            return rs
                 
     def update_entry(self, data: dbtypes.Mixin):
         attrs = dict()

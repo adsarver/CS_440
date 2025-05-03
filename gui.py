@@ -278,7 +278,6 @@ class Maintenance(tk.Tk):
         self.worker_tree.delete(*self.worker_tree.get_children())
         for w in self.sql.query_all(Worker):
             job_type = self.sql.query_where(JobType, f"id={w.job_type_id}")[0].name
-            # print(job_type)
             self.worker_tree.insert('', 'end', values=(w.email, w.firstname, w.lastname, job_type))
 
     def refresh_request_table(self):
@@ -323,7 +322,7 @@ class Maintenance(tk.Tk):
 
     def refresh_building_dropdown(self):
         self.building_dropdown['values'] = [
-            f"{b.campus.name} - {b.name}" for b in self.session.query_all(Building)
+            f"{b.campus.name} - {b.name}" for b in self.sql.query_all(Building)
         ]
 
 
@@ -400,9 +399,10 @@ class Delete(tk.Tk):
             truncate_and_reset_all_data(self.session)
 
 def main():
-    delete = Delete()
-    delete.mainloop()
-    delete.session.close()
+    # delete = Delete()
+    # delete.mainloop()
+    # delete.session.close()
+    generate_data(session)
     
     maintenance = Maintenance()
     maintenance.mainloop()

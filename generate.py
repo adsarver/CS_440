@@ -20,34 +20,36 @@ def generate_random_address():
     street_number = random.randint(100, 999)
     return f"{street_number} {street_name}, Morgantown, WV {random.randint(26505, 26508)}"
 
-def add_campus(name, session: Session):
-    campus = session.query(Campus).filter_by(name=name).first()
-    if campus is None:
+def add_campus(name):
+    campus = sql.query_where(Campus, f"name=\'{name}\'")
+    if len(campus) == 0:
         address = generate_random_address()
         campus = Campus(name=name, address=address)
+        return sql.create_entry(campus)
+    return campus[0]
 
-    return sql.create_entry(campus)
-
-def add_building(name, campus_name, session: Session):
-    campus = add_campus(campus_name, session)
+def add_building(name, campus_name):
+    campus = add_campus(campus_name)
     address = generate_random_address()
     building = Building(name=name, address=address, campus_id=campus.id, campus=campus)
 
     return sql.create_entry(building)
 
-def add_room(building, room_name, room_type_name, session: Session):
-    room_type = session.query(RoomType).filter_by(name=room_type_name).first()
-    if not room_type:
+def add_room(building, room_name, room_type_name):
+    room_type = sql.query_where(RoomType, f"name=\'{room_type_name}\'")
+    if len(room_type) == 0:
         room_type = RoomType(name=room_type_name)
         room_type = sql.create_entry(RoomType)
-    
-    room = Room(name=room_name, building_id=building.id, type_id=room_type.id, room_type=room_type, building=building)
+    else:
+        room_type = room_type[0]
+    print(building)
+    room = Room(name=room_name, building_id=building.id, room_type_id=room_type.id, room_type=room_type, building=building)
     return sql.create_entry(room)
 
 
-def add_worker(campus_name, session: Session):
+def add_worker(campus_name):
     fake = faker.Faker()
-    campus = add_campus(campus_name, session)
+    campus = add_campus(campus_name)
     firstname = fake.first_name()
     lastname = fake.last_name()
     email = fake.email()
@@ -55,7 +57,7 @@ def add_worker(campus_name, session: Session):
     worker = Worker(email= email,
                     firstname= firstname,
                     lastname= lastname,
-                    job_type_id= random.choice(session.query(JobType).all()).id,
+                    job_type_id= random.choice(sql.query_all(JobType)).id,
                     campus_id= campus.id,
                     campus=campus)
 
@@ -67,7 +69,7 @@ def add_user(session: Session, firstname=None, lastname=None, email=None):
     lastname = lastname or fake.last_name()
     email = email or fake.email()
 
-    user = session.query(User).filter_by(email=email).first()
+    user = sql.query_where(User, f"email=\'{email}\'")[0]
     if user is None:
         user = User(email=email, firstname=firstname, lastname=lastname)
         user = sql.create_entry(user)
@@ -77,9 +79,9 @@ def add_user(session: Session, firstname=None, lastname=None, email=None):
     return user
 
 def add_request(session: Session, user_email, room_id, description, worker_email=None):
-    user = session.query(User).filter_by(email=user_email).first()
-    room = session.query(Room).filter_by(id=room_id).first()
-    worker = session.query(Worker).filter_by(email=worker_email).first() if worker_email else None
+    user = sql.query_where(User, f"email=\'{user_email}\'")[0]
+    room = sql.query_where(Room, f"id=\'{room_id}\'")[0]
+    worker = sql.query_where(Worker, f"email=\'{worker_email}\'")[0] if worker_email else None
 
     if not user:
         raise ValueError(f"No user found with email: {user_email}")
@@ -104,29 +106,25 @@ def add_request(session: Session, user_email, room_id, description, worker_email
 
 def generate_data(session: Session, building_floors=2, rooms_per_floor=5, workers_per_campus=5):
     
-    [session.add(JobType(name=type)) for type in JOB_TYPES]
-    [session.add(RoomType(name=room)) for room in ROOM_TYPES]
-    [session.add(RequestStatus(name=status)) for status in STATUS_TYPES]
-    session.commit()
+    [sql.create_entry(JobType(name=type)) for type in JOB_TYPES]
+    [sql.create_entry(RoomType(name=room)) for room in ROOM_TYPES]
+    [sql.create_entry(RequestStatus(name=status)) for status in STATUS_TYPES]
     
     
     room_numbers = [x * 100 + y for x in range(1, building_floors+1) for y in range(1, rooms_per_floor+1)]
 
     for campus_name in BUILDINGS.keys():
-        add_campus(campus_name, session)
+        add_campus(campus_name)
 
     for campus_name, building_list in BUILDINGS.items():
         for building_name in building_list:
-            building = add_building(building_name, campus_name, session)
+            building = add_building(building_name, campus_name)
             for room_num in room_numbers:
                 room_type = random.choice(ROOM_TYPES)
-                add_room(building, room_num, room_type, session)
+                add_room(building, room_num, room_type)
 
         for _ in range(workers_per_campus):
-            add_worker(campus_name, session)
-            
-
-
+            add_worker(campus_name)
             
 
 def main():
