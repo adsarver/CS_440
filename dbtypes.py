@@ -103,17 +103,17 @@ class Request(Mixin, Base):
 class RoomType(Mixin, Base):
     __tablename__ = "room_types"
     id = Column(Integer, primary_key=True)
-    name = Column(Text, unique=True)
+    name = Column(String(255), unique=True)
     rooms = relationship('Room', back_populates='room_type') 
 
 class JobType(Mixin, Base):
     __tablename__ = "job_types"
     id = Column(Integer, primary_key=True)
-    name = Column(Text, unique=True)
+    name = Column(String(255), unique=True)
     workers = relationship("Worker", back_populates="job_type")
 
 class RequestStatus(Mixin, Base):
     __tablename__ = "request_status"
     id = Column(Integer, primary_key=True)
-    name = Column(Text, unique=True)
+    name = Column(String(255), unique=True)
     requests = relationship("Request", back_populates="request_status")

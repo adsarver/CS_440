@@ -90,6 +90,7 @@ class custom_sql():
             if "_id" in k and attrs[k] is not None:
                 crit = lambda member: member[0] == k[:-3].capitalize()
                 tableobj = next((member for member in inspect.getmembers(dbtypes) if crit(member)), None)
+                if tableobj is None: break
                 attrs[k[:-3]] = self.query_where(tableobj[1](), f"id={val}")
             elif "_id" in k:
                 attrs[k] = getattr(data, k[:-3]).id

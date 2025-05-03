@@ -4,7 +4,16 @@ from sqlalchemy.orm import sessionmaker
 import sqlalchemy, faker, random, datetime
 from config import CONNECTION_URL, JOB_TYPES, ROOM_TYPES, BUILDINGS, STATUS_TYPES
 from custom_sql import custom_sql
-sql = None
+
+engine = sqlalchemy.create_engine(CONNECTION_URL, echo=True)
+Session = sessionmaker(bind=engine)
+session = Session()
+
+sql = custom_sql(session, engine)
+
+Base.metadata.drop_all(engine)
+Base.metadata.create_all(engine)
+
 def generate_random_address():
     fake = faker.Faker()
     street_name = fake.street_name()
