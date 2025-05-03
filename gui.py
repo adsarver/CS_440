@@ -10,6 +10,8 @@ from sqlalchemy.orm import sessionmaker
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from custom_sql import custom_sql
+
 engine = sqlalchemy.create_engine(CONNECTION_URL)
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine)
@@ -23,6 +25,8 @@ class Maintenance(tk.Tk):
 
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(expand=1, fill='both')
+        
+        self.sql = custom_sql(self.session, engine)
         
         self.worker_view_tab()
         self.add_location_tab()
@@ -188,26 +192,25 @@ class Maintenance(tk.Tk):
             messagebox.showerror("Error", "Email, First Name, and Last Name are required.")
             return
 
-        if self.session.query(User).filter_by(email=email).first() or self.session.query(Worker).filter_by(email=email).first():
+        if self.sql.query_where(User, f"email={email}")[0] or self.sql.query_where(Worker, f"email={email}")[0]:
             messagebox.showerror("Error", "User with this email already exists.")
             return
 
         new_user = User(email=email, firstname=first_name, lastname=last_name)
-        self.session.add(new_user)
-        self.session.commit()
+        self.sql.create_entry(User)
 
     def refresh_user_requests_table(self):
         self.user_request_tree.delete(*self.user_request_tree.get_children())  # Clear existing rows
         email = getattr(self, "current_user_email", None)
         if email:
-            user_requests = self.session.query(Request).filter_by(user_email=email).all()
+            user_requests = self.sql.query_where(Request, f"user_email={email}")
             for r in user_requests:
-                status_str = self.session.query(RequestStatus).filter_by(id=r.status_id).first().name
+                status_str = self.sql.query_where(RequestStatus, f"id={r.status_id}")[0].name
                 self.user_request_tree.insert('', 'end', values=(r.id, f"{r.room.building.campus.name} - {r.room.building.name} - {r.room.name}", r.description, status_str, r.reqtime, r.comptime))
 
     def login_user(self):
         email = self.login_email_var.get().strip()
-        if self.session.query(User).filter_by(email=email).first() is not None:
+        if self.sql.query_where(User, f"email={email}")[0] is not None:
             self.current_user_email = email
             self.user_action_frame.pack()
             self.user_requests_frame.pack()
@@ -226,7 +229,7 @@ class Maintenance(tk.Tk):
     def refresh_room_dropdown(self):
         self.room_dropdown['values'] = [
             f"{r.building.campus.name} - {r.building.name} - {r.name}"
-            for r in self.session.query(Room).join(Building).join(Campus).all()
+            for r in self.sql.query_all(Room)
         ]
 
 
@@ -236,7 +239,7 @@ class Maintenance(tk.Tk):
             messagebox.showerror("Error", "No user logged in.")
             return
 
-        user = self.session.query(User).filter_by(email=email).first()
+        user = self.sql.query_where(User, f"email={email}")[0]
         if not user:
             messagebox.showerror("Error", f"User with email '{email}' does not exist.")
             return
@@ -249,24 +252,22 @@ class Maintenance(tk.Tk):
             return
 
         campus_name, building_name, room_name = map(str.strip, room_text.split(" - ", 2))
-        room = self.session.query(Room).join(Building).join(Campus).filter(
-            Room.name == room_name,
-            Building.name == building_name,
-            Campus.name == campus_name
-        ).first()
+        room = None
+        for r in self.sql.query_all(Room):
+            if r.name == room_name and r.building.name == building_name and r.campus.name == campus_name:
+                room = r
+                break
 
         if room:
             new_req = Request(
                 user_email=email,
-                room_id=room.id,
                 description=description,
                 worker_email=None,
                 status_id=1,
                 reqtime=datetime.datetime.now(),
                 comptime=None
             )
-            self.session.add(new_req)
-            self.session.commit()
+            self.sql.create_entry(room)
             self.refresh_request_table()
             self.refresh_user_requests_table()
 
@@ -275,15 +276,15 @@ class Maintenance(tk.Tk):
 
     def refresh_worker_table(self):
         self.worker_tree.delete(*self.worker_tree.get_children())
-        for w in self.session.query(Worker).all():
-            job_type = self.session.query(JobType).filter_by(id=w.job_type_id).first().name
+        for w in self.sql.query_all(Worker):
+            job_type = self.sql.query_where(JobType, f"id={w.job_type_id}")[0].name
             # print(job_type)
             self.worker_tree.insert('', 'end', values=(w.email, w.firstname, w.lastname, job_type))
 
     def refresh_request_table(self):
         self.request_tree.delete(*self.request_tree.get_children())
-        for r in self.session.query(Request).all():
-            status_str = self.session.query(RequestStatus).filter_by(id=r.status_id).first().name
+        for r in self.sql.query_all(Request):
+            status_str = self.sql.query_where(RequestStatus, f"id={r.status_id}")[0].name
             self.request_tree.insert('', 'end', values=(r.id, r.user_email, f"{r.room.building.campus.name} - {r.room.building.name} - {r.room.name}", r.description, r.worker_email, status_str, r.reqtime, r.comptime))
 
     def assign_worker(self):
@@ -297,10 +298,10 @@ class Maintenance(tk.Tk):
         req_id = self.request_tree.item(selected_request[0])['values'][0]
         worker_email = self.worker_tree.item(selected_worker[0])['values'][0]
 
-        req = self.session.query(Request).filter_by(id=req_id).first()
+        req = self.sql.query_where(Request, f"id={req_id}")[0]
         if req:
             req.worker_email = worker_email
-            self.session.commit()
+            self.sql.update_entry(req)
             self.refresh_request_table()
         else:
             messagebox.showerror("Error", "Request not found.")
@@ -309,21 +310,20 @@ class Maintenance(tk.Tk):
         selected = self.request_tree.selection()
         for item in selected:
             req_id = self.request_tree.item(item)['values'][0]
-            req = self.session.query(Request).filter_by(id=req_id).first()
+            req = self.sql.query_where(Request, f"id={req_id}")[0]
             if req:
                 req.comptime = datetime.datetime.now()
-                req.status_id = self.session.query(RequestStatus).filter_by(name='Complete').first().id
+                req.status_id = self.sql.query_where(RequestStatus, f"name=Complete")[0].id
 
-        self.session.commit()
         self.refresh_request_table()
         self.refresh_user_requests_table()
 
     def refresh_campus_dropdown(self):
-        self.campus_dropdown['values'] = [c.name for c in self.session.query(Campus).all()]
+        self.campus_dropdown['values'] = [c.name for c in self.sql.query_all(Campus)]
 
     def refresh_building_dropdown(self):
         self.building_dropdown['values'] = [
-            f"{b.campus.name} - {b.name}" for b in self.session.query(Building).join(Campus).all()
+            f"{b.campus.name} - {b.name}" for b in self.session.query_all(Building)
         ]
 
 
@@ -331,9 +331,8 @@ class Maintenance(tk.Tk):
         name = self.campus_name_var.get().strip()
         address = self.campus_address_var.get().strip()
         if name:
-            if not self.session.query(Campus).filter_by(name=name).first():
-                self.session.add(Campus(name=name, address=address))
-                self.session.commit()
+            if not self.sql.query_where(Campus, f"name={name}")[0]:
+                self.sql.create_entry(Campus(name=name, address=address))
                 self.refresh_campus_dropdown()
                 self.campus_name_var.set("")
                 self.campus_address_var.set("")
@@ -344,11 +343,10 @@ class Maintenance(tk.Tk):
         name = self.building_name_var.get().strip()
         campus_name = self.building_campus_var.get().strip()
         address = self.building_address_var.get().strip()
-        campus = self.session.query(Campus).filter_by(name=campus_name).first()
+        campus = self.sql.query_where(Campus, f"name={campus_name}")[0]
         if name and campus:
-            if not self.session.query(Building).filter_by(name=name).first():
-                self.session.add(Building(name=name, address=address, campus_id=campus.id))
-                self.session.commit()
+            if not self.sql.query_where(Building, f"name={name}")[0]:
+                self.sql.create_entry(Building(name=name, address=address, campus_id=campus.id))
                 self.refresh_building_dropdown()
                 self.building_name_var.set("")
                 self.building_address_var.set("")
@@ -364,15 +362,15 @@ class Maintenance(tk.Tk):
             messagebox.showerror("Error", "Invalid building selection.")
             return
         campus_name, building_name = building_text.split(" - ", 1)
-        building = self.session.query(Building).join(Campus).filter(
-            Building.name == building_name,
-            Campus.name == campus_name
-        ).first()
+        building = None
+        for b in self.sql.query_all(Building):
+            if b.name == building_name and b.campus.name == campus_name:
+                building = b
+                break
         if name and rtype and building:
-            room_type_id = self.session.query(RoomType).filter_by(name=rtype).first().id
-            if not self.session.query(Room).filter_by(name=name, building_id=building.id).first():
-                self.session.add(Room(name=name, type_id=room_type_id, building_id=building.id))
-                self.session.commit()
+            room_type_id = self.sql.query_where(RoomType, f"name={rtype}")[0].id
+            if not self.sql.query_where(Room, f"name={name} AND building_id={building.id}")[0]:
+                self.sql.create_entry(Room(name=name, type_id=room_type_id, building_id=building.id))
                 self.refresh_room_dropdown()
                 self.room_name_var.set("")
                 self.room_type_var.set("")

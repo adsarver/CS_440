@@ -3,7 +3,8 @@ from dbtypes import Building, Room, Campus, Worker, User, Request, RoomType, Job
 from sqlalchemy.orm import sessionmaker
 import sqlalchemy, faker, random, datetime
 from config import CONNECTION_URL, JOB_TYPES, ROOM_TYPES, BUILDINGS, STATUS_TYPES
-
+from custom_sql import custom_sql
+sql = None
 def generate_random_address():
     fake = faker.Faker()
     street_name = fake.street_name()
@@ -15,29 +16,24 @@ def add_campus(name, session: Session):
     if campus is None:
         address = generate_random_address()
         campus = Campus(name=name, address=address)
-        session.add(campus)
-        session.commit()
-    return campus
+
+    return sql.create_entry(campus)
 
 def add_building(name, campus_name, session: Session):
     campus = add_campus(campus_name, session)
     address = generate_random_address()
-    building = Building(name=name, address=address, campus_id=campus.id)
-    session.add(building)
-    session.commit()
-    return building
+    building = Building(name=name, address=address, campus_id=campus.id, campus=campus)
+
+    return sql.create_entry(building)
 
 def add_room(building, room_name, room_type_name, session: Session):
     room_type = session.query(RoomType).filter_by(name=room_type_name).first()
     if not room_type:
         room_type = RoomType(name=room_type_name)
-        session.add(room_type)
-        session.commit()
+        room_type = sql.create_entry(RoomType)
     
-    room = Room(name=room_name, building_id=building.id, type_id=room_type.id)
-    session.add(room)
-    session.commit()
-    return room
+    room = Room(name=room_name, building_id=building.id, type_id=room_type.id, room_type=room_type, building=building)
+    return sql.create_entry(room)
 
 
 def add_worker(campus_name, session: Session):
@@ -51,11 +47,10 @@ def add_worker(campus_name, session: Session):
                     firstname= firstname,
                     lastname= lastname,
                     job_type_id= random.choice(session.query(JobType).all()).id,
-                    campus_id= campus.id)
+                    campus_id= campus.id,
+                    campus=campus)
 
-    session.add(worker)
-    session.commit()
-    return worker
+    return sql.create_entry(worker)
 
 def add_user(session: Session, firstname=None, lastname=None, email=None):
     fake = faker.Faker()
@@ -66,8 +61,7 @@ def add_user(session: Session, firstname=None, lastname=None, email=None):
     user = session.query(User).filter_by(email=email).first()
     if user is None:
         user = User(email=email, firstname=firstname, lastname=lastname)
-        session.add(user)
-        session.commit()
+        user = sql.create_entry(user)
         print(f"User '{firstname} {lastname}' added with email '{email}'")
     else:
         print(f"User with email '{email}' already exists.")
@@ -88,16 +82,16 @@ def add_request(session: Session, user_email, room_id, description, worker_email
     request = Request(
         user_email=user.email,
         room_id=room.id,
+        room=room,
         description=description,
         reqtime=datetime.datetime.now(),
         worker_id=worker.email if worker else None,
-        status_id="Incomplete"
+        worker=worker if worker else None,
+        status_id="Incomplete",
     )
 
-    session.add(request)
-    session.commit()
     print(f"Request by user '{user.email}' added for room ID '{room.id}'")
-    return request
+    return sql.create_entry(request)
 
 def generate_data(session: Session, building_floors=2, rooms_per_floor=5, workers_per_campus=5):
     
@@ -130,6 +124,8 @@ def main():
     engine = sqlalchemy.create_engine(CONNECTION_URL, echo=True)
     Session = sessionmaker(bind=engine)
     session = Session()
+    
+    sql = custom_sql(session, engine)
     
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
