@@ -2,9 +2,13 @@
 
 ## Installs
 
-Install [MariaDB](https://mariadb.org/)
+[Beekeeper studio](https://www.beekeeperstudio.io/) to easily see database contents and updates
 
-Install python dependencies
+[MariaDB](https://mariadb.org/) for da database
+
+[Python 3](https://www.python.org/downloads/) for our scripts
+
+Python dependencies also for our scripts
 
 ```bash
 pip install mysql-connector-python sqlalchemy faker
